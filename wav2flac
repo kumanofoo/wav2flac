@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import subprocess
+import re
+from argparse import ArgumentParser, RawTextHelpFormatter, RawDescriptionHelpFormatter, ArgumentDefaultsHelpFormatter
+from typing import Dict, List
+
+
+class Tags:
+    """FLAC meta tag
+
+    Attributes:
+        artists (string): Artist name.
+        title (string): Title of the music.
+        album (string): Album title.
+        genre (string): Genre of the music.
+        tracknumber (int): Tracknumber of the music in the album.
+    """
+
+    def __init__(self, artist: str = "", title: str = "", album: str = "",
+                 genre: str = "", tracknumber: str = ""):
+        """Set tags to the object"""
+        self.artist = artist  # Rip Slyme
+        self.title = title  # Bushman
+        self.album = album  # Five
+        self.genre = genre  # Soul and R&B
+        self.tracknumber = tracknumber  # 6
+
+    def get_tags(self) -> Dict[str, str]:
+        """Get tags
+
+        Get all attributes as Dict.
+
+        Return:
+            Dict: All attributes.
+        """
+        tags = {
+            "artist": self.artist,
+            "title": self.title,
+            "album": self.album,
+            "genre": self.genre,
+            "tracknumber": self.tracknumber,
+        }
+        return tags
+
+    def write_tags(self, flacfile: Path, with_artwork: bool = True):
+        """Write tags to flackfile
+
+        Args:
+            flacfile (Path): Target filename.
+            with_artwork (bool): Whether artwork is included or not.
+                                 The name of artwork file should be 'artwork.jpg'
+                                 and saved in the same directory as wave files.
+        """
+        command = ['metaflac']
+        tags = vars(self)
+        for tag in tags:
+            if tags[tag] == "":
+                continue
+            if tag == 'tracknumber':
+                n = str(int(tags[tag]))
+                command.append('--set-tag=tracknumber=%s' % n)
+            else:
+                command.append('--set-tag=%s=%s' % (tag, tags[tag]))
+        if with_artwork:
+            artwork = flacfile.with_name('artwork.jpg')
+            if artwork.exists():
+                command.append('--import-picture-from=%s' % artwork)
+
+        command.append(str(flacfile))
+        result = subprocess.run(command, capture_output=True)
+        if result.returncode != 0:
+            print("stderr:", result.stderr.decode('utf-8'))
+
+
+def list_wav_files(directory: str) -> List[str]:
+    """List WAVE files
+
+    Args:
+        directory (string): The directory where WAV files is located.
+
+    Return:
+        List: flies
+    """
+    p = Path(directory)
+    file_list = p.glob(directory + '/**/*.wav')
+    return file_list
+
+
+def has_tracknumber(filepaths: Path) -> bool:
+    """Check for track number in the file name.
+
+    Args:
+        filepaths (Path): WAV files
+
+    Return:
+        bool: Whether the file names has track number or not.
+    """
+    has_num = True
+    for file in files:
+        result = re.match(r'^(\d\d )', file.name)
+        if result is None:
+            has_num = False
+    return has_num
+
+
+def collect_tags(filepath: Path, has_tracknumber: bool = False) -> Tags:
+    """Collect tags for FLAC file.
+
+    Args:
+        filepath (Path): WAVE file path.
+        has_tracknumber (bool): Whether the filename includs tracknumber or not.
+
+    Return:
+        Tags: Tags object.
+    """
+    title = filepath.stem
+    tracknumber = ""
+    if has_tracknumber:
+        result = re.match(r'^(\d\d) (.+)$', title)
+        tracknumber = result.groups()[0]
+        title = result.groups()[1]
+    album = ""
+    if len(filepath.parents) > 0:
+        album = filepath.parents[0].name
+    artist = ""
+    if len(filepath.parents) > 1:
+        artist = filepath.parents[1].name
+    return Tags(artist=artist, title=title, album=album, genre="",
+                tracknumber=tracknumber)
+
+
+class HelpFormatter(RawTextHelpFormatter, RawDescriptionHelpFormatter, ArgumentDefaultsHelpFormatter):
+    pass
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser(
+        description="""
+        Convert WAV to FLAC with tags
+
+        artist/album title/artwork.jpg
+        artist/album title/01 title1.wav
+        artist/album title/02 title2.wav
+        """,
+        formatter_class=HelpFormatter
+    )
+    parser.add_argument(
+        '-d',
+        '--directory',
+        default=".",
+        help='WAV file directory.')
+    args = parser.parse_args()
+    
+    files = list(list_wav_files(args.directory))
+    has_num = has_tracknumber(files)
+    for filepath in files:
+        tags = collect_tags(filepath, has_tracknumber=has_num)
+        print(filepath)
+        command = ['flac', '-s', filepath]
+        result = subprocess.run(command, capture_output=True)
+        if result.returncode != 0:
+            print("stderr:", result.stderr.decode('utf-8'))
+            continue
+        flacfile = filepath.with_suffix('.flac')
+        tags.write_tags(flacfile)
