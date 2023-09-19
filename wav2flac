@@ -84,7 +84,7 @@ def list_wav_files(directory: str) -> List[str]:
         List: flies
     """
     p = Path(directory)
-    file_list = p.glob(directory + '/**/*.wav')
+    file_list = p.glob('**/*.wav')
     return file_list
 
 
